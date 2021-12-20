@@ -3,19 +3,36 @@ package gee
 import (
 	"log"
 	"net/http"
+	"strings"
 )
 
 // HandlerFunc defines the request handler used by gee
 type HandlerFunc func(*Context)
 
 // Engine implement the interface of ServeHTTP
+
+//添加RouterGroup接口
 type Engine struct {
+	*RouterGroup
 	router *router
+	groups []*RouterGroup // store all groups
+}
+
+//RouterGroup struct
+type RouterGroup struct {
+	prefix      string
+	middlewares []HandlerFunc // support middleware
+	parent      *RouterGroup  // support nesting
+	engine      *Engine       // all groups share a Engine instance
 }
 
 // New is the constructor of gee.Engine
 func New() *Engine {
-	return &Engine{router: newRouter()}
+	engine := &Engine{router: newRouter()}
+	engine.RouterGroup = &RouterGroup{engine: engine}
+	//engine继承RouterGroup所有方法
+	engine.groups = []*RouterGroup{engine.RouterGroup}
+	return engine
 }
 
 func (engine *Engine) addRoute(method string, pattern string, handler HandlerFunc) {
@@ -37,8 +54,21 @@ func (engine *Engine) POST(pattern string, handler HandlerFunc) {
 func (engine *Engine) Run(addr string) (err error) {
 	return http.ListenAndServe(addr, engine)
 }
-
 func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	//创建中间件数组
+	var middlewares []HandlerFunc
+	//循环遍历所有group
+	for _, group := range engine.groups {
+		//如果字符串hasprefix
+		if strings.HasPrefix(req.URL.Path, group.prefix) {
+			//添加中间件信息
+			middlewares = append(middlewares, group.middlewares...)
+		}
+	}
 	c := newContext(w, req)
+	c.handlers = middlewares
 	engine.router.handle(c)
+}
+func (group *RouterGroup) Use(middlewares ...HandlerFunc) {
+	group.middlewares = append(group.middlewares, middlewares...)
 }

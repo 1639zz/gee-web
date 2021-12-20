@@ -18,6 +18,9 @@ type Context struct {
 	Params map[string]string
 	// response info
 	StatusCode int
+	// middleware
+	handlers []HandlerFunc
+	index    int
 }
 
 func newContext(w http.ResponseWriter, req *http.Request) *Context {
@@ -26,7 +29,26 @@ func newContext(w http.ResponseWriter, req *http.Request) *Context {
 		Req:    req,
 		Path:   req.URL.Path,
 		Method: req.Method,
+		index:  -1,
 	}
+}
+
+//调用Next方法时，
+//控制权交到下一个中间件，直到调用最后一个中间件，
+//再从后往前完成next后定义哥部分
+func (c *Context) Next() {
+	//下标++
+	c.index++
+	//得到handler长度
+	s := len(c.handlers)
+	//当c<总长度时，遍历添加
+	for ; c.index < s; c.index++ {
+		c.handlers[c.index](c)
+	}
+}
+func (c *Context) Fail(code int, err string) {
+	c.index = len(c.handlers)
+	c.JSON(code, H{"message": err})
 }
 
 func (c *Context) PostForm(key string) string {
