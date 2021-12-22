@@ -3,6 +3,7 @@ package gee
 import (
 	"log"
 	"net/http"
+	"path"
 	"strings"
 )
 
@@ -71,4 +72,29 @@ func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 func (group *RouterGroup) Use(middlewares ...HandlerFunc) {
 	group.middlewares = append(group.middlewares, middlewares...)
+}
+
+//解析请求地址
+func (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileSystem) HandlerFunc {
+	//得到地址，并放在group中
+	absolutePath := path.Join(group.prefix, relativePath)
+	//保存fileServer
+	fileServer := http.StripPrefix(absolutePath, http.FileServer(fs))
+	return func(c *Context) {
+		file := c.Param("filepath")
+		//检查文件是否创建、是否有权限进行操作
+		if _, err := fs.Open(file); err != nil {
+			//返回404错误
+			c.Status(http.StatusNotFound)
+			return
+		}
+		fileServer.ServeHTTP(c.Writer, c.Req)
+	}
+}
+
+//静态文件处理(暴露给用户)
+func (group *RouterGroup) Static(relativePath string, root string) {
+	handler := group.createStaticHandler(relativePath, http.Dir(root))
+	urlPattern := path.Join(relativePath, "/*filepath")
+	group.GET(urlPattern, handler)
 }
